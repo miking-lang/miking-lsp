@@ -1,5 +1,5 @@
 include "json.mc"
-include "map.mc"
+include "assoc.mc"
 include "utils.mc"
 
 type Id
@@ -16,8 +16,8 @@ type RpcError = { code    : Int
                 }
 
 type RpcResult
-con Success : JsonValue -> RpcResult
-con Failure : RpcError  -> RpcResult
+con RpcSuccess : JsonValue -> RpcResult
+con RpcFailure : RpcError  -> RpcResult
 
 type RpcRequest = { method : String
                   , params : Option -- Params
@@ -60,9 +60,9 @@ let errorToJson = lam x.
 
 let responseToJson = lam x.
   let resultOrError =
-    match x.result with Success v then
+    match x.result with RpcSuccess v then
       ("result", v)
-    else match x.result with Failure err then
+    else match x.result with RpcFailure err then
       ("error", errorToJson err)
     else error "responseToJson: Invalid result"
   in
@@ -97,7 +97,7 @@ let getJsonString = lam x.
 
 let getObjectMapping = lam x.
   match x with JsonObject arr then
-    Some (lam k. mapLookupOpt eqstr k arr)
+    Some (lam k. assocLookup {eq = eqstr} k arr)
   else
     None ()
 
@@ -112,16 +112,16 @@ let jsonToRequest = lam x.
          })))
   in optionBind (getObjectMapping x) extractRequest
 
-let jsonToResult = lam x. Some (Success x)
+let jsonToResult = lam x. Some (RpcSuccess x)
 
 let jsonToError = lam x.
   let extractError = lam lookup.
     optionBind (optionBind (lookup "code") getJsonInt) (lam code.
     optionBind (optionBind (lookup "message") getJsonString) (lam msg.
-    Some (Failure { code = code
-                  , message = msg
-                  , data = lookup "data"
-                  })))
+    Some (RpcFailure { code = code
+                     , message = msg
+                     , data = lookup "data"
+                     })))
   in optionBind (getObjectMapping x) extractError
 
 let jsonToResponse = lam x.
@@ -202,7 +202,7 @@ in
 utest jsonToRequest boolId with None () in
 
 -- Responses
-let testResponseSuccess = {result=Success (JsonInt 13), id=StrId "myId"} in
+let testResponseSuccess = {result=RpcSuccess (JsonInt 13), id=StrId "myId"} in
 let testJsonResponseSuccess =
   JsonObject [ jsonrpc
              , ("result", JsonInt 13)
@@ -213,7 +213,7 @@ in
 utest responseToJson testResponseSuccess with testJsonResponseSuccess in
 utest jsonToResponse testJsonResponseSuccess with Some testResponseSuccess in
 
-let testResponseFailure = {result=Failure {code=negi 32700, message="bar", data=None ()}, id=IntId 42} in
+let testResponseFailure = {result=RpcFailure {code=negi 32700, message="bar", data=None ()}, id=IntId 42} in
 let testJsonResponseFailure =
   JsonObject [ jsonrpc
              , ("error", JsonObject [ ("code", JsonInt (negi 32700))
@@ -226,7 +226,7 @@ in
 utest responseToJson testResponseFailure with testJsonResponseFailure in
 utest jsonToResponse testJsonResponseFailure with Some testResponseFailure in
 
-let testResponseData = {result=Failure {code=negi 32700, message="bar", data=Some (JsonInt 257)}, id=IntId 42} in
+let testResponseData = {result=RpcFailure {code=negi 32700, message="bar", data=Some (JsonInt 257)}, id=IntId 42} in
 let testJsonResponseData =
   JsonObject [ jsonrpc
              , ("error", JsonObject [ ("code", JsonInt (negi 32700))
